@@ -1,3 +1,5 @@
+# python train_denoiser.py --batch_size 1 --gpus 8 --notes default_settings --crop_size 526 --data semidark --network dvdhr
+
 import sys, os, glob
 sys.path.append("..")
 import numpy as np
@@ -63,6 +65,8 @@ def main():
                         help='Specify the filepath for the stills dataset.')
     parser.add_argument('--cleanvideo_path', default = '../data/RGBNIR_videodataset_mat/',
                         help='Specify the filepath for the clean video dataset.')
+    parser.add_argument('--semidark_path', default = 'C:/projects/DeepHeat/low-light/data_collection/data/clean-thermal-videos/',
+                        help='Specify the filepath for the semidark video dataset.')
     parser.add_argument('--save_every', default = 20, type=int, 
                         help='Choose save frequency. Save every N epochs. ')
     parser.add_argument('-n', '--nodes', default=1,
@@ -152,6 +156,9 @@ def get_dataset(args):
         elif args.crop_size == '256':
             crop_size = (256,256)
             i0 = None
+        elif args.crop_size == '526':
+            crop_size = (526,526)
+            i0 = None
         else:
             crop_size = (512,512)
             i0 = None
@@ -226,6 +233,32 @@ def get_dataset(args):
     if 'realvideo' in args.data:
         
         all_real_videos = np.sort(glob.glob(args.cleanvideo_path + '*'))
+        file_path_list = []
+        file_path_list_test = []
+        for k in range(0,len(all_real_videos)):
+            all_files = glob.glob(all_real_videos[k] +'/*.mat')
+            inds = []
+            for i in range(0, len(all_files)):
+                inds.append(int(all_files[i].split('_')[-1].split('.mat')[0]))
+
+            inds_sort = np.argsort(inds)
+            all_files_sorted = np.array(all_files)[inds_sort]
+            sublist = all_files_sorted[0::16][0:-2]
+            file_path_list_test.append(all_files_sorted[0::16][-2:-1][0])
+            for i in sublist:
+                file_path_list.append(i)
+        
+        dataset_real_videos = dset.Get_sample_batch_video_distributed2(file_path_list, composed_transforms)
+        dataset_real_videos_test = dset.Get_sample_batch_video_distributed2(file_path_list_test, composed_transforms_test)
+
+        # add to dataset list
+        dataset_list.append(dataset_real_videos)
+        dataset_list_test.append(dataset_real_videos_test)
+
+    # Optionally load in the lowlight+thermal video dataset (unpaired)
+    if 'semidark' in args.data:
+        
+        all_real_videos = np.sort(glob.glob(args.semidark_path + '*'))
         file_path_list = []
         file_path_list_test = []
         for k in range(0,len(all_real_videos)):
@@ -486,9 +519,17 @@ def train(gpu, args):
     print('entering training function')
     print(args.nr, args.gpus, gpu, args.world_size)
     # Setup for distributed training on multiple GPUs
-    rank = args.nr * args.gpus + gpu                         
+    rank = args.nr * args.gpus + gpu    
+
+    # dist.init_process_group(                                   
+    #     backend='nccl',                                         
+    #     init_method='env://',                                   
+    #     world_size=args.world_size,                              
+    #     rank=rank) 
+    
+    # use this for windows machines
     dist.init_process_group(                                   
-        backend='nccl',                                         
+        backend='gloo',                                         
         init_method='env://',                                   
         world_size=args.world_size,                              
         rank=rank)    

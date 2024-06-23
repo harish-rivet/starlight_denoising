@@ -1,6 +1,6 @@
 import sys, os, glob
-sys.path.append("../.")
-sys.path.append("../data/")
+# sys.path.append("../.")
+# sys.path.append("../data/")
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -9,6 +9,7 @@ from torch.optim import Adam
 from PIL import Image
 import argparse, json, torchvision
 import scipy.io
+breakpoint()
 import helper.canon_supervised_dataset as dset
 import helper.gan_helper_fun as gh
 import lpips
@@ -290,6 +291,8 @@ def train(gpu, args):
     best_kld = 1e6
     for epoch in range(0,num_epochs):
         for i, sample in enumerate(train_loader):
+
+            breakpoint()
 
             noisy_raw = torch.transpose(sample['noisy_input'],0, 2).squeeze(2).to(gpu)
             clean_raw = torch.transpose(sample['gt_label_nobias'],0, 2).squeeze(2).to(gpu)

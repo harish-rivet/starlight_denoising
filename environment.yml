@@ -4,9 +4,6 @@ channels:
 dependencies:
   - cudatoolkit=11.3
   - torchvision
-  - torchaudio
-  - pytorch
-  - ipython
   - nb_conda
   - matplotlib
   - scipy
@@ -14,5 +11,4 @@ dependencies:
   - scikit-image
   - pandas
   - scikit-learn
-  - lpips
   - yacs

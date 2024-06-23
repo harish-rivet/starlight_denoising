@@ -8,6 +8,7 @@ import torch.autograd as autograd
 import scipy.io
 import argparse, json, glob, os, sys
 from models.unet import Unet
+import ntpath
 
 from pathlib import Path
 _script_dir = Path( __file__ ).parent
@@ -219,7 +220,7 @@ def load_from_checkpoint_ab(folder_name, device='cuda:0', ep='latest', new_model
     if ep == 'best':
         curr_epoch = int(path.split('/')[-1].split('_')[0].split('bestgenerator')[1])
     else:
-        curr_epoch = int(path.split('/')[-1].split('_')[0].split('generatorcheckpoint')[1])
+        curr_epoch = int(os.path.basename(path).split('/')[-1].split('_')[0].split('generatorcheckpoint')[1])
     print('current epoch', curr_epoch)
 
     return generator

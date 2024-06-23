@@ -86,6 +86,9 @@ class Unet(nn.Module):
         x = self.conv5(x)
         x = self.up1(x)
         # print("shapes: c0:%sx:%s c4:%s " % (c0.shape,x.shape,c4.shape))
+        # import pdb
+        # pdb.set_trace()
+        # breakpoint()
         x = torch.cat([x, c4], 1)  # x[:,0:128]*x[:,128:256],
         x = self.conv6(x)
         x = self.up2(x)

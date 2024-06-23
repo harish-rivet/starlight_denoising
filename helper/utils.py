@@ -165,10 +165,12 @@ def load_from_checkpoint(folder_name, best = True):
         
     model.load_state_dict(saved_state_dict)
     
-    if best == True:
-        curr_epoch = int(path.split('/')[-1].split('_')[0].split('best')[1])
-    else:
-        curr_epoch = int(path.split('/')[-1].split('_')[0].split('checkpoint')[1])
+    # if best == True:
+    #     curr_epoch = int(path.split('/')[-1].split('_')[0].split('best')[1])
+    # else:
+    #     curr_epoch = int(path.split('/')[-1].split('_')[0].split('checkpoint')[1])
+    curr_epoch = 0 # Not sure why the above block is required, this is just a placeholder
+
     loaded = scipy.io.loadmat(args.resume_from_checkpoint + '/losses.mat')
     loss_list = list(loaded['train_loss'][0])
     test_loss_list = list(loaded['test_loss'][0])

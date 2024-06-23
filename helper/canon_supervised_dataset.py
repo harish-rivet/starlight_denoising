@@ -38,6 +38,11 @@ def get_dataset_noise_visualization(dataset_arg, filepath_data):
         all_files_mat_test = glob.glob(filepath_data + 'paired_data/stillpairs_mat/*.mat')[40:-1]
         dataset_test_real = Get_sample_batch(all_files_mat_test, composed_transforms2)
         dataset_list_test.append(dataset_test_real)
+
+    if 'semidark' in dataset_arg:
+        all_files_mat_test = glob.glob(filepath_data + 'paired_data/starlight-clean-noisy-pairs/*.mat')[18:]
+        dataset_test_real = Get_sample_batch_semidark(all_files_mat_test, composed_transforms2)
+        dataset_list_test.append(dataset_test_real)
         
     if len(dataset_list_test)>1:
         dataset_list_test = torch.utils.data.ConcatDataset(tuple(dataset_list_test))
@@ -262,6 +267,19 @@ class RandCrop_gen(object):
         sample['rand_inds'] = [i0,i1]
         return sample
     
+class RandCrop_gen_lowlightcams(object):
+    """Convert ndarrays in sample to Tensors."""
+    def __init__(self, shape = (512,512)):
+        self.shape = shape
+    def __call__(self, sample):
+        i0 = np.random.randint(0, 526-self.shape[0]+1)
+        i1 = np.random.randint(0, 840-self.shape[1]+1)
+        for key in sample:
+            sample[key] = sample[key][...,i0:i0+self.shape[0],i1:i1+self.shape[1]]
+        
+        sample['rand_inds'] = [i0,i1]
+        return sample
+    
 class RandCrop2(object):
     """Convert ndarrays in sample to Tensors."""
     def __init__(self, shape = (512,512)):
@@ -346,6 +364,7 @@ class Get_sample_noise_batch(object):
         
         return sample
     
+
 class Get_sample_noise_batch_new(object):
     """Get image from noisy pairs for noise training (color)"""
     
@@ -414,7 +433,7 @@ class Get_sample_batch(object):
 
         alpha = True
         sample_loaded = scipy.io.loadmat(self.input_dir[idx])
-    
+
         noisy_im = np.empty((16, *sample_loaded['noisy_list'].shape[1:]), dtype = 'float32')
         gt_im = np.empty((16, *sample_loaded['noisy_list'].shape[1:]), dtype = 'float32')
         gt_im = np.repeat(np.mean(sample_loaded['gt_list'].astype('float32'), 0)[np.newaxis], 16, axis = 0)
@@ -445,14 +464,14 @@ class Get_sample_batch(object):
         del sample_loaded
         if self.transform:
             sample = self.transform(sample)
-        
+
         return sample
 
     
-class Get_sample_batch_video_distributed2(object):
-    """Loads in images from our clean RGB+NIR video dataset"""
+class Get_sample_batch_semidark(object):
+    """Loads in real still clean/noisy pairs dataset"""
     
-    def __init__(self, input_dir, transform=None):
+    def __init__(self, input_dir, transform=None, start_ind = None):
         """
         Args:
             filenames: List of filenames
@@ -461,6 +480,61 @@ class Get_sample_batch_video_distributed2(object):
         """
         self.input_dir = input_dir
         self.transform = transform
+        self.start_ind = start_ind
+    def __len__(self):
+        return len(self.input_dir)
+    def __getitem__(self, idx):
+
+        alpha = True
+        sample_loaded = scipy.io.loadmat(self.input_dir[idx])
+
+        noisy_im = np.empty((16, *sample_loaded['noisy_list'].shape[1:]), dtype = 'float32')
+        gt_im = np.empty((16, *sample_loaded['noisy_list'].shape[1:]), dtype = 'float32')
+        gt_im = np.repeat(np.mean(sample_loaded['gt_list'].astype('float32'), 0)[np.newaxis], 16, axis = 0)
+        
+        if sample_loaded['noisy_list'].shape[0]<16:
+            print('bad image',self.input_dir[idx])
+            high_ind = sample_loaded['noisy_list'].shape[0]
+            noisy_im[0:high_ind] = sample_loaded['noisy_list'].copy()
+            noisy_im[high_ind:] = sample_loaded['noisy_list'][0:16-high_ind].copy()
+        else: 
+            if self.start_ind is not None:
+                low_ind = self.start_ind
+            else:
+                low_ind = np.random.randint(0,sample_loaded['noisy_list'].shape[0] - 16)
+               
+            noisy_im = sample_loaded['noisy_list'].astype('float32')[low_ind:low_ind+16]#.copy()
+        if alpha:
+            gt_im = gt_im/sample_loaded['alpha']
+        else:
+            noisy_im = noisy_im*sample_loaded['alpha']
+        #noisy_im = noisy_im*sample_loaded['alpha']
+
+        sample = {'noisy_input': noisy_im, 
+              #'gt_label': gt_im,
+                 'gt_label_nobias': gt_im}
+        
+        del sample_loaded
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+
+class Get_sample_batch_video_distributed2(object):
+    """Loads in images from our clean RGB+NIR video dataset"""
+    
+    def __init__(self, input_dir, image_size=(640,1080) , transform=None):
+        """
+        Args:
+            filenames: List of filenames
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.input_dir = input_dir
+        self.transform = transform
+        self.image_height = image_size[0]
+        self.image_width = image_size[1]
 
     def __len__(self):
         return len(self.input_dir)
@@ -478,7 +552,7 @@ class Get_sample_batch_video_distributed2(object):
         inds_sort = np.argsort(inds)
         all_files_sorted = np.array(all_files)[inds_sort]
     
-        noisy_im = np.empty((16,640,1080,4))
+        noisy_im = np.empty((16,self.image_height,self.image_width,4))
         
         for i in range(0,16):
             noisy_im[i] =  scipy.io.loadmat(all_files_sorted[curr_num + i])['noisy_list'].astype('float32')    
@@ -493,6 +567,7 @@ class Get_sample_batch_video_distributed2(object):
         sample['noisy_input'] =  (sample['gt_label_nobias']*0)-5.
         
         return sample  
+
 
 class Get_sample_batch_simvideo_distributed2(object):
     """Loads in images from the MOT video dataset."""
@@ -570,6 +645,7 @@ class Get_sample_batch_simvideo_distributed2(object):
         
         return sample    
     
+
 class ConcatDataset(torch.utils.data.Dataset):
     def __init__(self, *datasets):
         self.datasets = datasets
