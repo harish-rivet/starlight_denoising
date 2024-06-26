@@ -1,5 +1,6 @@
-# python train_denoiser.py --batch_size 1 --gpus 1 --notes trial --crop_size 256 --data stills --network dvdhr
-# python train_denoiser.py --batch_size 1 --gpus 8 --notes default_settings --crop_size 526 --data semidark --network dvdhr
+# python train_denoiser.py --batch_size 1 --gpus 1 --notes "trial" --crop_size 256 --data stills --network dvdhr --noise_type semidar_noise_256
+# python train_denoiser.py --batch_size 1 --gpus 1 --notes trial --crop_size 256 --data semidark-lowlight-only --network dvdhr --noise_type semidar_noise_256 --additional_noise y
+# python train_denoiser.py --batch_size 1 --gpus 8 --notes default_settings --crop_size 256 --data semidark-lowlight-only --network dvdhr --noise_type semidar_noise_256
 
 import sys, os, glob
 sys.path.append("..")
@@ -19,7 +20,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 import time
-
+import helper.post_processing as pp
     
 def find_free_port():
     """ https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number """
@@ -62,11 +63,11 @@ def main():
     parser.add_argument('--MOT_path', default = '../data/MOTfiles_raw/',
                         help='If using unprocessed MOT images during training, specify the filepath \
                         for where your MOT dataset is stored')
-    parser.add_argument('--stills_path', default = '../data/paired_data/stillpairs_mat', 
+    parser.add_argument('--stills_path', default = 'data/paired_data/stillpairs_mat/', 
                         help='Specify the filepath for the stills dataset.')
     parser.add_argument('--cleanvideo_path', default = '../data/RGBNIR_videodataset_mat/',
                         help='Specify the filepath for the clean video dataset.')
-    parser.add_argument('--semidark_path', default = 'C:/projects/DeepHeat/low-light/data_collection/data/clean-thermal-videos/',
+    parser.add_argument('--semidark_path', default = 'C:/projects/DeepHeat/low-light/data_collection/data/lowlight-thermal-rgb-videos/',
                         help='Specify the filepath for the semidark video dataset.')
     parser.add_argument('--save_every', default = 20, type=int, 
                         help='Choose save frequency. Save every N epochs. ')
@@ -79,6 +80,7 @@ def main():
     parser.add_argument('--epochs', default=2, type=int, 
                         metavar='N',
                         help='number of total epochs to run')
+    parser.add_argument('--additional_noise', default= 'n') 
 
     args = parser.parse_args()
     args.world_size = args.gpus * args.nodes
@@ -139,7 +141,8 @@ def main():
     
     torch.cuda.empty_cache()
     
-    mp.spawn(train, nprocs=args.gpus, args=(args,))
+    # mp.spawn(train, nprocs=args.gpus, args=(args,))
+    train(0, args)
 
 def get_dataset(args):
     # Load in the dataset 
@@ -225,7 +228,7 @@ def get_dataset(args):
 
         dataset_train = dset.Get_sample_batch(all_files_mat, composed_transforms)
         dataset_test = dset.Get_sample_batch(all_files_mat_test, composed_transforms_test, start_ind=0)
-    
+        
         # add to dataset list
         dataset_list.append(dataset_train)
         dataset_list_test.append(dataset_test)
@@ -257,7 +260,7 @@ def get_dataset(args):
         dataset_list_test.append(dataset_real_videos_test)
 
     # Optionally load in the lowlight+thermal video dataset (unpaired)
-    if 'semidark' in args.data:
+    if 'semidark' == args.data:
         
         all_real_videos = np.sort(glob.glob(args.semidark_path + '*'))
         file_path_list = []
@@ -278,6 +281,35 @@ def get_dataset(args):
         dataset_real_videos = dset.Get_sample_batch_video_distributed2(file_path_list, composed_transforms)
         dataset_real_videos_test = dset.Get_sample_batch_video_distributed2(file_path_list_test, composed_transforms_test)
 
+        # add to dataset list
+        dataset_list.append(dataset_real_videos)
+        dataset_list_test.append(dataset_real_videos_test)
+
+    # Optionally load in the lowlight+thermal video dataset (unpaired)
+    if 'semidark-lowlight-only' == args.data:
+        t_list = [dset.RandCropnp_lowlightcams(shape = crop_size), dset.ToTensor2()]
+        composed_transforms = torchvision.transforms.Compose(t_list)
+        
+        all_real_videos = np.sort(glob.glob(args.semidark_path + '*'))
+        file_path_list = []
+        for k in range(0,len(all_real_videos)):
+            all_files = glob.glob(all_real_videos[k] +'/*.mat')
+            inds = []
+            for i in range(0, len(all_files)):
+                inds.append(int(all_files[i].split('_')[-1].split('.mat')[0]))
+
+            inds_sort = np.argsort(inds)
+            all_files_sorted = np.array(all_files)[inds_sort]
+            sublist = all_files_sorted[0::16][0:-1]
+            # file_path_list_test.append(all_files_sorted[0::16][-2:-1][0])
+            for i in sublist:
+                file_path_list.append(i)
+        
+        dataset_real_videos = dset.Get_sample_batch_video_distributed2(file_path_list, image_size=(526,840), transform=composed_transforms)
+        file_path_list_test = glob.glob('data/paired_data/starlight-clean-noisy-pairs/*.mat')
+        dataset_real_videos_test = dset.Get_sample_batch_semidark(file_path_list_test, \
+                                                                            torchvision.transforms.Compose([dset.RandCropnp_lowlightcams(shape=crop_size), \
+                                                                                                            dset.ToTensor2()]))
         # add to dataset list
         dataset_list.append(dataset_real_videos)
         dataset_list_test.append(dataset_real_videos_test)
@@ -401,6 +433,9 @@ def load_generator_model(args, gpu):
     # After training your own noise model, you can add it here to be loaded and used during denoiser training
     elif args.noise_type == 'your_noise_model_here': 
         base_file = '../saved_models/your_noise_model_path_here/'
+        generator = gh.load_from_checkpoint_ab(base_file, device = gpu)
+    elif args.noise_type == 'semidar_noise_256': 
+        base_file = r'C:\projects\saved_models\noisemodelUnet_shot_read_uniform_row1_rowt_fixed1_periodic_learnedfixed_256_semidark_fourier_yournamehere'.replace('\\', '/')
         generator = gh.load_from_checkpoint_ab(base_file, device = gpu)
     else:
         print('invalid generator')
@@ -610,15 +645,28 @@ def train(gpu, args):
             start = time.time()
             
             gt_label = sample['gt_label_nobias'].cuda(non_blocking=True)
+
+            print('gt_label', gt_label.shape, 'max', gt_label.max(), 'min', gt_label.min())
             
             # If using simulated data, generate the noisy video clip using the noise generator
             if sample['noisy_input'][0,0,0,0,0]<-3:
+                print("sample['noisy_input'][0,0,0,0,0]<-3", sample['noisy_input'][0,0,0,0,0])
                 with torch.no_grad():
                     net_input = gh.t23_1(generator(gh.t32_1(sample['gt_label_nobias'].cuda(non_blocking=True))))
+
+                
             # Otherwise, use the real noisy clip
             else:
+                print("sample['noisy_input'][0,0,0,0,0]<-3", sample['noisy_input'][0,0,0,0,0])
                 net_input = sample['noisy_input'].cuda(non_blocking=True)
+            
+            if args.additional_noise == 'y':
+                net_input = pp.blur_image_batch_multiple_frames(net_input)
+                print('net_input after blur', net_input.shape, 'max', net_input.max(), 'min', net_input.min())
+                net_input = pp.add_white_noise_batch_multiple_frames(net_input).cuda(non_blocking=True)
+                print('net_input after white noise', net_input.shape, 'max', net_input.max(), 'min', net_input.min())
           
+            print('net_input', net_input.shape, 'max', net_input.max(), 'min', net_input.min())
             
             if args.network == 'hrnet2d':
                 szo = net_input.shape
@@ -632,9 +680,12 @@ def train(gpu, args):
                 gt_label = gt_label[:,:,8]
             else:
                 net_output = model(net_input)
-
+            
+            print('net_output', net_output)
                 
             loss = criterion(net_output, gt_label)
+
+            print('loss', loss.shape)
             
             # Backward and optimize
             start = time.time()
@@ -651,6 +702,8 @@ def train(gpu, args):
                         total_step,
                         loss.item())
                        )
+                
+            print('ep', ep, 'step', i, 'done')
 
        
         train_loss.append(avg_loss/i)     

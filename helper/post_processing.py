@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import scipy.io
+import torch
 
 def bayer_bilinear(imagei, height = None, width= None):
     
@@ -181,6 +182,7 @@ def saturation(img, param=np.array([.5,.5,.5])):
     img_param = 1-param
     return img*img_param +full_color*param 
 
+
 def contrast(img, param):
     luminance = np.clip(rgb2lum(img),0.0,1.1)[...,np.newaxis]
     contrast_lum = np.cos(np.pi*luminance)*0.5 + 0.5
@@ -188,3 +190,52 @@ def contrast(img, param):
     
 
     return lerp(img, contrast_image, param)
+
+
+def add_white_noise_multiple_frames(image):
+    # assuming image of shape (F, C, H, W)
+    noise = np.random.normal(0, 0.1, (image.shape[0], 1, image.shape[2], image.shape[3]))
+    noise = np.repeat(noise, image.shape[1], axis=1).astype(np.float32)
+    noisy_image = cv2.add(image.cpu().detach().numpy(), noise)
+    noisy_image = torch.tensor(noisy_image)
+    # noisy_image = noise
+    return noisy_image
+
+
+def add_white_noise_batch_multiple_frames(image):
+    # assuming image of shape (B, C, F, H, W) and torch
+    noise = np.random.normal(0, 0.1, (image.shape[0], 1, image.shape[2], image.shape[3], image.shape[4]))
+    noise = np.repeat(noise, image.shape[1], axis=1).astype(np.float32)
+    noisy_image = cv2.add(image.cpu().detach().numpy(), noise)
+    noisy_image = np.clip(noisy_image, 0, 1)
+    noisy_image = torch.tensor(noisy_image)
+    # noisy_image = noise
+    return noisy_image
+
+def blur_image_batch_multiple_frames(images):
+    images = images.cpu().detach().numpy()
+    # assuming image of shape (B, C, F, H, W) and torch
+    b, c, f, h, w = images.shape
+
+    # Define Gaussian blur parameters
+    kernel_size = (11, 11)  # Kernel size for the blur
+    sigma = 1.5  # Standard deviation for Gaussian kernel
+
+    # Initialize an array to store the blurred images
+    blurred_images = np.empty_like(images)
+
+    # Apply Gaussian blur to each image in the batch
+    for batch_idx in range(b):
+        for channel_idx in range(c):
+            for frame_idx in range(f):
+                # Extract the individual image
+                image = images[batch_idx, channel_idx, frame_idx, :, :]
+                
+                # Apply Gaussian blur
+                blurred_image = cv2.GaussianBlur(image, kernel_size, sigma)
+                
+                # Store the blurred image
+                blurred_images[batch_idx, channel_idx, frame_idx, :, :] = blurred_image
+
+    blurred_images = torch.tensor(blurred_images)
+    return blurred_images

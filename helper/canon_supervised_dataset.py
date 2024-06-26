@@ -241,6 +241,19 @@ class RandCropnp(object):
         #sample['rand_inds'] = [i0,i0+self.shape[0],i1,i1+self.shape[1]]
         return sample
     
+class RandCropnp_lowlightcams(object):
+    """Convert ndarrays in sample to Tensors."""
+    def __init__(self, shape = (512,512)):
+        self.shape = shape
+    def __call__(self, sample):
+        i0 = np.random.randint(0, 526-self.shape[0])
+        i1 = np.random.randint(0, 840-self.shape[1])
+        for key in sample:
+            sample[key] = sample[key][...,i0:i0+self.shape[0],i1:i1+self.shape[1],:]
+        
+        #sample['rand_inds'] = [i0,i0+self.shape[0],i1,i1+self.shape[1]]
+        return sample
+    
 class RandCrop(object):
     """Convert ndarrays in sample to Tensors."""
     def __init__(self, shape = (512,512)):
@@ -542,7 +555,8 @@ class Get_sample_batch_video_distributed2(object):
         
         curr_num = int(self.input_dir[im_ind].split('_')[-1].split('.mat')[0])
 
-        all_files = glob.glob(self.input_dir[im_ind].split('sequence')[0] +'/*.mat')
+        # all_files = glob.glob(self.input_dir[im_ind].split('sequence')[0] +'/*.mat')
+        all_files = glob.glob(os.path.join(os.path.dirname(self.input_dir[im_ind]), '*.mat'))
         num_in_seq = len(all_files)
 
         inds = []
@@ -555,8 +569,10 @@ class Get_sample_batch_video_distributed2(object):
         noisy_im = np.empty((16,self.image_height,self.image_width,4))
         
         for i in range(0,16):
-            noisy_im[i] =  scipy.io.loadmat(all_files_sorted[curr_num + i])['noisy_list'].astype('float32')    
-                
+            try:
+                noisy_im[i] =  scipy.io.loadmat(all_files_sorted[curr_num + i])['noisy_list'].astype('float32')    
+            except:
+                breakpoint()
         
         noisy_im = noisy_im/2**16
 
