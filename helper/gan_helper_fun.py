@@ -196,8 +196,10 @@ def load_from_checkpoint_ab(folder_name, device='cuda:0', ep='latest', new_model
         list_of_files = glob.glob(folder_name + '/generatorcheckpoint' + str(ep) +'_' + '*.pt')
         #print(list_of_files)
         latest_file = list_of_files[0]
-        
+    
     path = latest_file
+
+    print('Loading generator from', path)
     
     saved_state_dict = torch.load(path, map_location ='cuda:'+str(device))
     distributed_model = False

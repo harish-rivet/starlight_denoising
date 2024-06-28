@@ -143,8 +143,11 @@ def load_from_checkpoint(folder_name, best = True):
         list_of_files = glob.glob(folder_name + '/best*.pt') # * means all if need specific format then *.csv
     else:
         list_of_files = glob.glob(folder_name + '/checkpoint*.pt') # * means all if need specific format then *.csv
+    print(list_of_files)
     latest_file = max(list_of_files, key=os.path.getctime)
     path = latest_file
+
+    print('Loading denoiser from', path)
     
     saved_state_dict = torch.load(path, map_location = device)
     
